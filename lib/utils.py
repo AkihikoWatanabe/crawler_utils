@@ -8,11 +8,43 @@ import requests
 import cchardet
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 import timeout_decorator
 
 import crawler.lib.const as GC
+import internet_archives.lib.const as C
+import internet_archives.lib.custom_conditions as cec
+
+class Queue:
+    
+    def __init__(self, queue=None, max_size=5):
+
+        if type(queue) is type([]):
+            self.queue = queue
+        elif queue is None:
+            self.queue = []
+
+        self.max_size = max_size
+
+    def enqueue(self, e):
+
+        self.queue.append(e)
+        return self.queue
+
+    def dequeue(self):
+        
+        elem = self.queue[0]
+        del self.queue[0]
+
+        return elem
+
+    def is_full(self):
+
+        return len(self.queue) >= self.max_size
+
+    
 
 def random_sleep(max_sleep_time):
     """ 1 - max_sleep_timeの間でランダムにsleepをはさむ関数
@@ -52,20 +84,12 @@ def normalize_url(url, source_url):
 
 
 def status_code2str(status_code):
-    """ HTTP Responceステータスコードをステータスコードを表す文字列に変換する
 
-    Args:
-        status_code (int): ステータスコード
-
-    Returns:
-        str: ステータスコードを表す文字列
-    """
-
-    if status_code >= 500 and status_code <= 510:
+    if status_code >= 500 and status_code <= 520:
         return GC.SERVER_ERROR
     elif status_code >= 400 and status_code <= 451:
         return GC.CLIENT_ERROR
-    elif status_code >= 300 and status_code <= 308:
+    elif status_code >= 300 and status_code <= 310:
         return GC.REDIRECTION
     elif status_code >= 200 and status_code <= 226:
         return GC.SUCCESS
@@ -73,41 +97,17 @@ def status_code2str(status_code):
         return GC.INFORMATIONAL 
 
 
-def get_webdriver(script_encoding="utf-8"):
-    """ seleniumのwebdriverを取得する
-
-    Returns:
-        webdriver.PhantomJS: PhantomJSのwebdriver
-    """
-
-    dcap = {
-            "phantomjs.page.settings.userAgent": GC.HEADERS,
-            "marionette": True
-    }
-    args = [
-            "--ignore-ssl-errors=true",
-            "--ssl-protocol=any",
-            "--disk-cache=false",
-            "--load-images=false",
-            "--output-encoding=utf-8",
-            "--script-encoding={}".format(script_encoding)
-    ] 
-
-    return webdriver.PhantomJS(desired_capabilities=dcap, service_args=args) 
-
-@timeout_decorator.timeout(10, timeout_exception=TimeoutError)
-def get(url, logger, sleep_time, use_selenium=False):
+@timeout_decorator.timeout(GC.TIMEOUT, timeout_exception=TimeoutError)
+def get(url, logger, sleep_time, use_selenium=False, is_ia=False):
         """ urlにGETリクエストを送り、htmlを取得する
 
         Args:
             url (str): GETリクエストを送るurl
             logger (logger): loggerインスタンス
-            sleep_time: GETリクエストを送った際にスリープさせる最大時間
             use_selenium (bool): seleniumを使用するか否か
 
         Returns:
-            str: 取得したhtmlの生テキスト
-            int: ステータスコード
+            Responce: HttpResponce　取得できなければNone
         """
 
         @retry(
@@ -115,41 +115,14 @@ def get(url, logger, sleep_time, use_selenium=False):
                 stop_max_delay=GC.STOP_MAX_DELAY,
                 wait_fixed=GC.WAIT_FIXED
         )
-        def __GET_requests(url):
-            """ 引数で与えられたurlにrequestsでGETリクエストを送る
-
-            Returns:
-                Responce: HTTPResponce
-            """
-
+        def __get(url):
             return requests.get(url, headers=GC.HEADERS, timeout=GC.TIMEOUT)
 
-        def __GET_webdriver(driver, url):
-            """ 引数で与えられたurlにselenium web.driverでGETリクエストを送る
-
-            Args:
-                driver (webdriver): seleniumのweb driver
-                url (str): GETリクエストを送るurl
-            """
-
-            driver.set_page_load_timeout(GC.TIMEOUT)
-            driver_wait = WebDriverWait(driver, GC.TIMEOUT)
-            driver.get(url)
-            driver_wait.until(ec.presence_of_all_elements_located) 
-
         try:
-            res = __GET_requests(url)
+            res = __get(url)
         except Exception as e:
-            logger.error("{}".format(e))
+            logger.error("requests exception {}".format(e))
             raise TimeoutError
-
-        def __is_redirect(current_url, origin_url):
-            """ リダイレクトしたか否かを判定
-            """
-
-            if current_url != origin_url:
-                return True
-            return False
 
         encoding = cchardet.detect(res.content)['encoding'].lower() 
         res.encoding = encoding
@@ -166,22 +139,52 @@ def get(url, logger, sleep_time, use_selenium=False):
             )
         
         if use_selenium:
-            
+            dcap = {
+                    "phantomjs.page.settings.userAgent": GC.HEADERS,
+                    "marionette": True
+            }
+            args = [
+                    "--ignore-ssl-errors=true",
+                    "--ssl-protocol=any",
+                    "--disk-cache=false",
+                    "--load-images=false",
+                    "--output-encoding=utf-8",
+                    "--script-encoding={}".format(encoding)
+            ]
             try:
-                driver = __GET_webdriver(script_encoding=encoding)
+                driver = webdriver.PhantomJS(desired_capabilities=dcap, service_args=args)
+                # GET
+                driver.set_page_load_timeout(GC.TIMEOUT)
+                driver_wait = WebDriverWait(driver, GC.TIMEOUT)
+                driver.get(url)
+                if is_ia:
+                    driver_wait.until(
+                            cec.visibility_of_multiple_element_located(
+                                    (By.CSS_SELECTOR, C.TARGET_ERROR_CSS_SELECTOR),
+                                    (By.CSS_SELECTOR, C.TARGET_LINK_CSS_SELECTOR)
+                            )
+                    )
+                else:
+                    driver_wait.until(ec.presence_of_all_elements_located)
                 html = driver.page_source
             except TimeoutException:
+                logger.error("selenium TimeoutException on {}".format(url))
                 random_sleep(sleep_time)
+                raise TimeoutError
+            except Exception as e:
+                logger.error("selenium {} on {}".format(e, url))
                 raise TimeoutError
 
             random_sleep(sleep_time)
             
-            if __is_redirect(driver.current_url, url):
+            if driver.current_url != url:
                 logger.warning(
-                        "selenium redirect on {}".format(url)
+                        "selenium redirect on {} but html has saved on db.".format(url)
                 )
+                driver.close()
                 return html, GC.SELENIUM_REDIRECT
             else:
+                driver.close()
                 return html, res.status_code
         else:
             random_sleep(sleep_time)

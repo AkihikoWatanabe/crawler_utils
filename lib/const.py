@@ -1,8 +1,12 @@
 # coding=utf-8
 
 SLEEP_TIME = 4
-TIMEOUT = 10  #  タイムアウトに使用する秒数
+TIMEOUT = 60  #  タイムアウトにしようする秒数
 RECALL_THR = 0.5 
+
+MAX_QUEUE_SIZE = 5
+
+MAX_PAGES = 10
 
 HEADERS = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36"
@@ -18,10 +22,12 @@ INFORMATIONAL = "Informational"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # ステータスコード(HTTP Responceのステータスコードに便宜上追加)
-TIMEOUT_SEARCH_DISPURL = 600  # 続きを読むリンクの探索がタイムアウトした場合のステータスコード
-TIMEOUT_SEARCH_NEXTURL = 601  # 次のページリンクの探索がタイムアウトした場合のステータスコード
+TIMEOUT_SEARCH_DISPURL = 521  # 続きを読むリンクの探索がタイムアウトした場合のステータスコード
+TIMEOUT_SEARCH_NEXTURL = 522  # 次のページリンクの探索がタイムアウトした場合のステータスコード
 SELENIUM_REDIRECT = 310  # seleniumがページ読み終わったときリダイレクトしてた場合
 TIMEOUT = 520  # 接続がタイムアウトなどした場合
+REDIRECT_TOP_PAGES = 600
+TOO_MANY_SERVER_OR_CLIENT_ERROR = 601
 
 # GETで例外が発生したときにリトライする回数
 STOP_MAX_ATTEMPT_NUMBER = 5 
